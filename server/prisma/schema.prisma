@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum FormType {
+  TEN_K
+  TEN_Q
+}
+
+enum ScoreType {
+  piotroski_f
+  altman_z
+  beneish_m
+}
+
+enum RiskLevel {
+  low
+  medium
+  high
+  incomplete
+}
+
+enum AlertType {
+  new_filing
+  material_diff
+  score_threshold_breach
+}
+
+model User {
+  id         String       @id @default(uuid())
+  email      String       @unique
+  createdAt  DateTime     @default(now())
+  pushTokens PushToken[]
+  watchlist  WatchlistItem[]
+  alerts     Alert[]
+}
+
+model PushToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  token     String
+  platform  String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, token])
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  cik       String   @unique
+  ticker    String
+  name      String
+  sicCode   String?
+  createdAt DateTime @default(now())
+
+  watchlistItems WatchlistItem[]
+  filings        Filing[]
+  factSnapshots  XbrlFactSnapshot[]
+  diffs          FilingDiff[]
+  footnoteDiffs  FootnoteDiff[]
+  scores         RedFlagScore[]
+  alerts         Alert[]
+}
+
+model WatchlistItem {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  company   Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, companyId])
+}
+
+model Filing {
+  id                String   @id @default(uuid())
+  company           Company  @relation(fields: [companyId], references: [id])
+  companyId         String
+  accessionNumber   String   @unique
+  formType          FormType
+  filingDate        DateTime
+  periodOfReport    DateTime
+  fiscalYear        Int
+  fiscalPeriod      String
+  primaryDocumentUrl String?
+  rawMetadata       Json?
+  ingestedAt        DateTime @default(now())
+
+  factSnapshots XbrlFactSnapshot[]
+  scores        RedFlagScore[]
+  diffsAsNew    FilingDiff[] @relation("DiffNewFiling")
+  diffsAsPrior  FilingDiff[] @relation("DiffPriorFiling")
+  footnoteDiffsAsNew   FootnoteDiff[] @relation("FootnoteDiffNewFiling")
+  footnoteDiffsAsPrior FootnoteDiff[] @relation("FootnoteDiffPriorFiling")
+
+  @@index([companyId, formType])
+}
+
+model XbrlFactSnapshot {
+  id         String    @id @default(uuid())
+  company    Company   @relation(fields: [companyId], references: [id])
+  companyId  String
+  filing     Filing    @relation(fields: [filingId], references: [id])
+  filingId   String
+  concept    String
+  taxonomy   String
+  value      Float
+  unit       String
+  startDate  DateTime?
+  endDate    DateTime
+  formType   FormType
+  raw        Json?
+  createdAt  DateTime  @default(now())
+
+  @@unique([companyId, concept, endDate, unit, filingId], name: "uniqueFact")
+  @@index([companyId, concept])
+}
+
+model FilingDiff {
+  id              String   @id @default(uuid())
+  company         Company  @relation(fields: [companyId], references: [id])
+  companyId       String
+  filingNew       Filing   @relation("DiffNewFiling", fields: [filingIdNew], references: [id])
+  filingIdNew     String
+  filingPrior     Filing   @relation("DiffPriorFiling", fields: [filingIdPrior], references: [id])
+  filingIdPrior   String
+  concept         String
+  priorValue      Float?
+  newValue        Float?
+  deltaAbs        Float?
+  deltaPct        Float?
+  materialityFlag Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  @@index([companyId])
+}
+
+model FootnoteDiff {
+  id             String   @id @default(uuid())
+  company        Company  @relation(fields: [companyId], references: [id])
+  companyId      String
+  filingNew      Filing   @relation("FootnoteDiffNewFiling", fields: [filingIdNew], references: [id])
+  filingIdNew    String
+  filingPrior    Filing   @relation("FootnoteDiffPriorFiling", fields: [filingIdPrior], references: [id])
+  filingIdPrior  String
+  sectionName    String
+  similarityScore Float
+  excerptNew     String?
+  excerptPrior   String?
+  createdAt      DateTime @default(now())
+}
+
+model RedFlagScore {
+  id           String    @id @default(uuid())
+  company      Company   @relation(fields: [companyId], references: [id])
+  companyId    String
+  filing       Filing    @relation(fields: [filingId], references: [id])
+  filingId     String
+  fiscalYear   Int
+  fiscalPeriod String
+  scoreType    ScoreType
+  scoreValue   Float?
+  riskLevel    RiskLevel
+  inputs       Json
+  computedAt   DateTime  @default(now())
+
+  @@unique([companyId, fiscalYear, fiscalPeriod, scoreType])
+}
+
+model Alert {
+  id          String    @id @default(uuid())
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  company     Company   @relation(fields: [companyId], references: [id])
+  companyId   String
+  alertType   AlertType
+  referenceId String
+  title       String
+  message     String
+  severity    RiskLevel
+  isRead      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  sentAt      DateTime?
+}
+
+model IngestionJob {
+  id                String    @id @default(uuid())
+  startedAt         DateTime  @default(now())
+  finishedAt        DateTime?
+  status            String
+  companiesProcessed Int      @default(0)
+  errors            Json?
+}

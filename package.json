@@ -1,0 +1,13 @@
+{
+  "name": "finance-tracking",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "server:dev": "pnpm --filter server dev",
+    "server:build": "pnpm --filter server build",
+    "mobile:start": "pnpm --filter mobile start",
+    "ingest:once": "pnpm --filter server ingest:once"
+  }
+}
